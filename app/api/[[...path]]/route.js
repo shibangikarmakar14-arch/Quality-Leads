@@ -65,7 +65,7 @@ export async function GET(req) {
     // GET /api/saved
     if (parts[0] === "saved" && parts.length === 1) {
       const database = await db();
-      const items = await database.collection("saved_leads").find({}).sort({ savedAt: -1 }).toArray();
+      const items = await database.collection("saved_leads").find({}).sort({ savedAt: -1 }).limit(100).toArray();
       return json({ saved: items.map(s => ({ ...s, _id: undefined })) });
     }
 
@@ -372,6 +372,7 @@ Return ONLY valid JSON, no markdown, no code fences. Schema:
 
     // POST /api/saved { leadId }
     if (parts[0] === "saved" && parts.length === 1) {
+      const { leadId, folder = "Favorites", note = "" } = body;
       if (!leadId) return json({ error: "leadId required" }, 400);
       const lead = getLead(leadId);
       if (!lead) return json({ error: "Lead not found" }, 404);
