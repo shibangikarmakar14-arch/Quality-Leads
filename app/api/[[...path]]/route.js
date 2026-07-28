@@ -16,6 +16,108 @@ async function db() {
   return _client.db(DB_NAME);
 }
 
+// Lookup a lead by id. Checks seeded data first, then generated_leads in Mongo.
+async function fetchLead(id) {
+  if (!id) return null;
+  const seeded = getLead(id);
+  if (seeded) return seeded;
+  try {
+    const database = await db();
+    const doc = await database.collection("generated_leads").findOne({ id });
+    if (doc) {
+      const { _id, ...rest } = doc;
+      return rest;
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+// Generate a batch of realistic leads matching a search query via Claude.
+async function generateLeadsForQuery(query) {
+  const system = `You are a B2B sales data generator. Given a sales search query, produce 6 realistic-sounding but FICTIONAL prospect profiles that match the query. Fictional but plausible names, companies, titles, and details.
+
+Return ONLY a valid JSON ARRAY of 6 objects, no markdown, no code fences, no preamble. Keep values concise. Each object must exactly match this schema:
+{
+  "name": "First Last",
+  "title": "Full job title",
+  "company": "Company Name",
+  "location": "City, Country",
+  "industry": "Industry name",
+  "seniority": "C-Level" | "VP" | "Director" | "Head" | "Manager" | "Senior" | "Individual Contributor" | "Founder",
+  "department": "Engineering|Sales|Marketing|Operations|Finance|Procurement|People|Product|BizDev|Executive",
+  "linkedin": "linkedin.com/in/firstname-lastname",
+  "email": "first.last@companydomain.com",
+  "experience": [
+    { "role": "prior role", "company": "prior company", "years": "2020 - 2024" },
+    { "role": "earlier role", "company": "earlier company", "years": "2015 - 2020" }
+  ],
+  "education": ["Degree, University"],
+  "skills": ["skill1","skill2","skill3","skill4","skill5"],
+  "recentPosts": [
+    "One short realistic LinkedIn-style post (max 20 words)",
+    "Another realistic short post (max 20 words)"
+  ],
+  "buyingSignals": [
+    "3-4 short specific signals (max 8 words each)"
+  ],
+  "companyDetails": {
+    "name": "Company Name",
+    "logo": "single uppercase letter",
+    "industry": "Industry",
+    "employees": "e.g. 5000",
+    "revenue": "e.g. $2B",
+    "founded": 2010,
+    "hq": "City, Country",
+    "funding": "short e.g. Public / Series D $200M",
+    "growth": "e.g. +45% YoY",
+    "techStack": ["tech1","tech2","tech3","tech4","tech5"],
+    "news": ["3 short news items"],
+    "competitors": ["competitor1","competitor2","competitor3"],
+    "painPoints": ["short pain1","short pain2","short pain3"]
+  }
+}
+
+If the query mentions a real large company (e.g., Google, Microsoft, Amazon), use that company name literally with plausible employees/revenue for it. Otherwise invent believable companies. Do NOT include any "id" field. Keep the entire JSON compact.`;
+
+  const raw = await chatCompletion({
+    system,
+    messages: [{ role: "user", content: `Search query: ${query}\n\nReturn 6 matching prospects as a compact JSON array.` }],
+    maxTokens: 8000,
+    temperature: 0.85
+  });
+
+  // Strip potential fences
+  const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+  let arr;
+  try { arr = JSON.parse(cleaned); }
+  catch {
+    const match = cleaned.match(/\[[\s\S]*\]/);
+    if (match) {
+      try { arr = JSON.parse(match[0]); }
+      catch (e2) {
+        // Attempt to salvage: parse individual objects one by one
+        const objects = [];
+        const objRe = /\{[\s\S]*?\}(?=\s*[,\]])/g;
+        let m;
+        while ((m = objRe.exec(match[0])) !== null) {
+          try { objects.push(JSON.parse(m[0])); } catch {}
+        }
+        if (objects.length === 0) throw new Error("Invalid JSON from LLM: " + e2.message);
+        arr = objects;
+      }
+    } else throw new Error("Invalid JSON from LLM");
+  }
+  if (!Array.isArray(arr)) throw new Error("Expected array");
+
+  // Enrich with id + avatar
+  return arr.map((l, i) => ({
+    ...l,
+    id: `gen_${uuidv4()}`,
+    avatar: `https://i.pravatar.cc/200?u=${encodeURIComponent(l.name + l.company + Math.random())}`,
+    yearsInRole: l.yearsInRole || 2
+  }));
+}
+
 function json(data, status = 200) {
   return NextResponse.json(data, { status });
 }
@@ -38,19 +140,45 @@ export async function GET(req) {
 
     // GET /api/leads?q=...
     if (parts[0] === "leads" && parts.length === 1) {
-      const q = searchParams.get("q") || "";
+      const q = (searchParams.get("q") || "").trim();
       const seniority = searchParams.get("seniority") || "";
       const department = searchParams.get("department") || "";
       const filters = {};
       if (seniority) filters.seniority = seniority;
       if (department) filters.department = department;
-      const results = searchLeads(q, filters);
-      return json({ results, count: results.length });
+
+      // 1) Local seeded search first
+      const local = searchLeads(q, filters);
+      if (local.length > 0 || !q) {
+        return json({ results: local, count: local.length, source: "seeded" });
+      }
+
+      // 2) Check cache in Mongo for this query
+      const database = await db();
+      const qKey = q.toLowerCase();
+      const cached = await database.collection("generated_leads")
+        .find({ _query: qKey }).limit(20).toArray();
+      if (cached.length > 0) {
+        const items = cached.map(({ _id, ...rest }) => rest);
+        return json({ results: items, count: items.length, source: "cached" });
+      }
+
+      // 3) Generate fresh via Claude
+      try {
+        const generated = await generateLeadsForQuery(q);
+        // Store in Mongo with _query tag
+        const withTag = generated.map(g => ({ ...g, _query: qKey, generatedAt: new Date() }));
+        if (withTag.length) await database.collection("generated_leads").insertMany(withTag);
+        return json({ results: generated, count: generated.length, source: "generated" });
+      } catch (e) {
+        console.error("lead generation failed:", e);
+        return json({ results: [], count: 0, source: "empty", error: e.message });
+      }
     }
 
     // GET /api/leads/:id
     if (parts[0] === "leads" && parts.length === 2) {
-      const lead = getLead(parts[1]);
+      const lead = await fetchLead(parts[1]);
       if (!lead) return json({ error: "Not found" }, 404);
       return json({ lead });
     }
@@ -144,7 +272,7 @@ export async function POST(req) {
     if (parts[0] === "chat" && parts.length === 1) {
       const { sessionId, leadId, message } = body;
       if (!leadId || !message) return json({ error: "leadId and message required" }, 400);
-      const lead = getLead(leadId);
+      const lead = await fetchLead(leadId);
       if (!lead) return json({ error: "Lead not found" }, 404);
 
       const database = await db();
@@ -209,7 +337,7 @@ ${buildLeadContext(lead)}`;
       // Fire-and-forget background processing
       (async () => {
         for (const leadId of leadIds) {
-          const lead = getLead(leadId);
+          const lead = await fetchLead(leadId);
           let item;
           if (!lead) {
             item = { leadId, error: "Not found" };
@@ -256,7 +384,7 @@ ${buildLeadContext(lead)}`;
     // POST /api/outreach { leadId, type, tone }
     if (parts[0] === "outreach" && parts.length === 1) {
       const { leadId, type = "cold_email", tone = "consultative", productPitch } = body;
-      const lead = getLead(leadId);
+      const lead = await fetchLead(leadId);
       if (!lead) return json({ error: "Lead not found" }, 404);
 
       const typeMap = {
@@ -374,7 +502,7 @@ Return ONLY valid JSON, no markdown, no code fences. Schema:
     if (parts[0] === "saved" && parts.length === 1) {
       const { leadId, folder = "Favorites", note = "" } = body;
       if (!leadId) return json({ error: "leadId required" }, 400);
-      const lead = getLead(leadId);
+      const lead = await fetchLead(leadId);
       if (!lead) return json({ error: "Lead not found" }, 404);
       const database = await db();
       const existing = await database.collection("saved_leads").findOne({ leadId });

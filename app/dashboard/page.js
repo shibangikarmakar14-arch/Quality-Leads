@@ -17,6 +17,7 @@ export default function DashboardHome() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
+  const [lastSource, setLastSource] = useState(null);
 
   useEffect(() => {
     fetch("/api/leads").then(r => r.json()).then(d => setResults(d.results || []));
@@ -26,9 +27,11 @@ export default function DashboardHome() {
   async function doSearch(e) {
     e?.preventDefault();
     setLoading(true);
+    setResults([]);
     const r = await fetch(`/api/leads?q=${encodeURIComponent(query)}`);
     const d = await r.json();
     setResults(d.results || []);
+    setLastSource(d.source || null);
     setLoading(false);
   }
 
@@ -114,9 +117,36 @@ export default function DashboardHome() {
       {/* Results */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-sm text-white/50">{results.length} results</div>
+          <div className="text-sm text-white/50 flex items-center gap-2">
+            <span>{loading ? "Searching..." : `${results.length} results`}</span>
+            {lastSource === "generated" && !loading && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 inline-flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> AI-generated
+              </span>
+            )}
+            {lastSource === "cached" && !loading && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/60">cached</span>
+            )}
+          </div>
           <Link href="/dashboard/crm" className="text-xs text-indigo-300 hover:underline">Open pipeline →</Link>
         </div>
+
+        {loading && (
+          <Card className="bg-gradient-to-b from-indigo-500/10 to-transparent border-indigo-500/20 rounded-xl">
+            <CardContent className="p-8 text-center">
+              <div className="inline-flex items-center gap-2 text-indigo-300 mb-2">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+                <span className="text-sm font-medium">Claude is researching matching prospects...</span>
+              </div>
+              <div className="text-xs text-white/50">This takes 20-45 seconds for a fresh AI search. Subsequent searches for the same query are instant.</div>
+              <div className="mt-4 flex items-center justify-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse [animation-delay:300ms]" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {results.map((lead, i) => (
           <motion.div key={lead.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
