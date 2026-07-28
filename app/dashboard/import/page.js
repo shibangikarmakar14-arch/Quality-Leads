@@ -67,9 +67,24 @@ export default function ImportPage() {
       });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
-      setEnriched(d.enriched || []);
-      setStep("done");
-      toast.success(`Enriched ${d.enriched?.length || 0} prospects`);
+      const jobId = d.jobId;
+      if (!jobId) throw new Error("No jobId returned");
+
+      let finished = false;
+      while (!finished) {
+        await new Promise(res => setTimeout(res, 2000));
+        const sr = await fetch(`/api/bulk/${jobId}`);
+        const sd = await sr.json();
+        if (sd.error && sd.status !== "running") throw new Error(sd.error);
+        setEnriched(sd.results || []);
+        if (sd.status === "done") {
+          finished = true;
+          setStep("done");
+          toast.success(`Enriched ${sd.results?.length || 0} prospects`);
+        } else if (sd.status === "error") {
+          throw new Error(sd.error || "Job failed");
+        }
+      }
     } catch (e) {
       toast.error("Enrichment failed: " + e.message);
       setStep("preview");

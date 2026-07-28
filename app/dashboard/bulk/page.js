@@ -63,9 +63,24 @@ export default function BulkOutreachPage() {
       });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
-      setResults(d.results || []);
-      setProgress({ done: d.results?.length || 0, total: selected.size });
-      toast.success(`Generated ${d.results?.length || 0} outreach messages`);
+      const jobId = d.jobId;
+      if (!jobId) throw new Error("No jobId returned");
+
+      // Poll every 2s
+      let finished = false;
+      while (!finished) {
+        await new Promise(res => setTimeout(res, 2000));
+        const sr = await fetch(`/api/bulk/${jobId}`);
+        const sd = await sr.json();
+        if (sd.error) throw new Error(sd.error);
+        setProgress({ done: sd.done || 0, total: sd.total || selected.size });
+        setResults(sd.results || []);
+        if (sd.status === "done" || sd.status === "error") {
+          finished = true;
+          if (sd.status === "error") throw new Error(sd.error || "Job failed");
+          toast.success(`Generated ${sd.results?.length || 0} outreach messages`);
+        }
+      }
     } catch (e) {
       toast.error("Bulk generation failed: " + e.message);
     } finally {

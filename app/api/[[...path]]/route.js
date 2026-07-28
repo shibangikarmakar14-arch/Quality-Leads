@@ -92,6 +92,17 @@ export async function GET(req) {
       return json({ stages: doc.stages });
     }
 
+    // GET /api/bulk/:jobId → job status + partial results
+    if (parts[0] === "bulk" && parts.length === 2) {
+      const database = await db();
+      const job = await database.collection("bulk_jobs").findOne({ jobId: parts[1] });
+      if (!job) return json({ error: "Job not found" }, 404);
+      return json({
+        jobId: job.jobId, status: job.status, total: job.total, done: job.done,
+        results: job.results || [], error: job.error || null
+      });
+    }
+
     // GET /api/analytics
     if (parts[0] === "analytics" && parts.length === 1) {
       const database = await db();
@@ -188,46 +199,58 @@ ${buildLeadContext(lead)}`;
       const objective = typeMap[type] || typeMap.cold_email;
       const pitchLine = productPitch ? `Our product / value prop: ${productPitch}\n` : "Our product: Quality Leads \u2014 AI-powered B2B sales intelligence.\n";
 
-      const runOne = async (leadId) => {
-        const lead = getLead(leadId);
-        if (!lead) return { leadId, error: "Not found" };
-        const system = `You are an elite outbound copywriter. Tone: ${tone}. Write ${objective}.\n${pitchLine}\nUse specifics from the lead. No preamble. Plain text ready to paste.\n\n${buildLeadContext(lead)}`;
-        // Retry up to 2 times on transient LLM errors
-        let lastErr;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const content = await chatCompletion({
-              system,
-              messages: [{ role: "user", content: `Write the ${type.replace(/_/g, " ")} now.` }],
-              maxTokens: 500,
-              temperature: 0.75
-            });
-            return {
-              leadId, name: lead.name, title: lead.title, company: lead.company, avatar: lead.avatar,
-              content
-            };
-          } catch (err) {
-            lastErr = err;
-            // Wait before retry (exponential-ish)
-            await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
-          }
-        }
-        return { leadId, name: lead.name, company: lead.company, avatar: lead.avatar, error: lastErr?.message || "LLM error" };
-      };
-
-      // Sequential processing to avoid burst rate limits from LLM proxy
-      const results = [];
-      for (const leadId of leadIds) {
-        const r = await runOne(leadId);
-        results.push(r);
-      }
-
       const database = await db();
-      await database.collection("outreach_generations").insertOne({
-        id: uuidv4(), bulk: true, type, tone, count: results.length, createdAt: new Date()
+      const jobId = uuidv4();
+      await database.collection("bulk_jobs").insertOne({
+        jobId, kind: "outreach_bulk", status: "running", type, tone,
+        total: leadIds.length, done: 0, results: [], createdAt: new Date()
       });
 
-      return json({ type, tone, results });
+      // Fire-and-forget background processing
+      (async () => {
+        for (const leadId of leadIds) {
+          const lead = getLead(leadId);
+          let item;
+          if (!lead) {
+            item = { leadId, error: "Not found" };
+          } else {
+            const system = `You are an elite outbound copywriter. Tone: ${tone}. Write ${objective}.\n${pitchLine}\nUse specifics from the lead. No preamble. Plain text ready to paste.\n\n${buildLeadContext(lead)}`;
+            let content = null, lastErr;
+            for (let attempt = 0; attempt < 3 && !content; attempt++) {
+              try {
+                content = await chatCompletion({
+                  system,
+                  messages: [{ role: "user", content: `Write the ${type.replace(/_/g, " ")} now.` }],
+                  maxTokens: 500,
+                  temperature: 0.75
+                });
+              } catch (err) {
+                lastErr = err;
+                await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+              }
+            }
+            item = content
+              ? { leadId, name: lead.name, title: lead.title, company: lead.company, avatar: lead.avatar, content }
+              : { leadId, name: lead.name, company: lead.company, avatar: lead.avatar, error: lastErr?.message || "LLM error" };
+          }
+          await database.collection("bulk_jobs").updateOne(
+            { jobId },
+            { $push: { results: item }, $inc: { done: 1 } }
+          );
+        }
+        await database.collection("bulk_jobs").updateOne(
+          { jobId }, { $set: { status: "done", finishedAt: new Date() } }
+        );
+      })().catch(async (err) => {
+        console.error("bulk job failed:", err);
+        try {
+          await database.collection("bulk_jobs").updateOne(
+            { jobId }, { $set: { status: "error", error: err.message } }
+          );
+        } catch {}
+      });
+
+      return json({ jobId, total: leadIds.length });
     }
 
     // POST /api/outreach { leadId, type, tone }
@@ -276,15 +299,23 @@ ${buildLeadContext(lead)}`;
       return json({ type, tone, content: reply });
     }
 
-    // POST /api/import/csv { rows: [{ name, title, company, industry, location }, ...] }
+    // POST /api/import/csv { rows: [...] } → returns { jobId } immediately
     if (parts[0] === "import" && parts[1] === "csv") {
       const { rows = [] } = body;
       if (!Array.isArray(rows) || rows.length === 0) return json({ error: "rows required" }, 400);
       if (rows.length > 50) return json({ error: "Max 50 rows per import" }, 400);
 
-      const runOne = async (row) => {
-        const rowText = `Prospect: ${row.name || ""} — ${row.title || ""} at ${row.company || ""} (${row.industry || ""}, ${row.location || ""})`;
-        const system = `You are a B2B sales research analyst. For the given prospect, infer plausible current buying signals (funding, hiring, product launches, expansion, tech migrations, leadership changes — based on public patterns for their role/industry) AND write a short personalized cold email pitching "Quality Leads", an AI sales intelligence platform that finds prospects, researches accounts, and writes personalized outreach.
+      const database = await db();
+      const jobId = uuidv4();
+      await database.collection("bulk_jobs").insertOne({
+        jobId, kind: "csv_import", status: "running",
+        total: rows.length, done: 0, results: [], createdAt: new Date()
+      });
+
+      (async () => {
+        for (const row of rows) {
+          const rowText = `Prospect: ${row.name || ""} — ${row.title || ""} at ${row.company || ""} (${row.industry || ""}, ${row.location || ""})`;
+          const system = `You are a B2B sales research analyst. For the given prospect, infer plausible current buying signals (funding, hiring, product launches, expansion, tech migrations, leadership changes — based on public patterns for their role/industry) AND write a short personalized cold email pitching "Quality Leads", an AI sales intelligence platform.
 
 Return ONLY valid JSON, no markdown, no code fences. Schema:
 {
@@ -292,45 +323,51 @@ Return ONLY valid JSON, no markdown, no code fences. Schema:
   "coldEmail": "personalized cold email text starting with Subject:"
 }`;
 
-        let lastErr;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const raw = await chatCompletion({
-              system,
-              messages: [{ role: "user", content: rowText }],
-              maxTokens: 600,
-              temperature: 0.7
-            });
-            const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
-            let parsed;
-            try { parsed = JSON.parse(cleaned); }
-            catch {
-              const match = cleaned.match(/\{[\s\S]*\}/);
-              if (match) parsed = JSON.parse(match[0]);
-              else throw new Error("Invalid JSON from LLM");
+          let item = { ...row };
+          let lastErr;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const raw = await chatCompletion({
+                system,
+                messages: [{ role: "user", content: rowText }],
+                maxTokens: 600,
+                temperature: 0.7
+              });
+              const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+              let parsed;
+              try { parsed = JSON.parse(cleaned); }
+              catch {
+                const match = cleaned.match(/\{[\s\S]*\}/);
+                if (match) parsed = JSON.parse(match[0]);
+                else throw new Error("Invalid JSON from LLM");
+              }
+              item = { ...row, buyingSignals: parsed.buyingSignals || [], coldEmail: parsed.coldEmail || "" };
+              lastErr = null;
+              break;
+            } catch (err) {
+              lastErr = err;
+              await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
             }
-            return { ...row, buyingSignals: parsed.buyingSignals || [], coldEmail: parsed.coldEmail || "" };
-          } catch (err) {
-            lastErr = err;
-            await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
           }
+          if (lastErr) item = { ...row, error: lastErr.message };
+          await database.collection("bulk_jobs").updateOne(
+            { jobId },
+            { $push: { results: item }, $inc: { done: 1 } }
+          );
         }
-        return { ...row, error: lastErr?.message || "LLM error" };
-      };
-
-      // Sequential processing to avoid burst rate limits
-      const enriched = [];
-      for (const row of rows) {
-        const r = await runOne(row);
-        enriched.push(r);
-      }
-
-      const database = await db();
-      await database.collection("imported_leads").insertOne({
-        id: uuidv4(), count: enriched.length, createdAt: new Date(), enriched
+        await database.collection("bulk_jobs").updateOne(
+          { jobId }, { $set: { status: "done", finishedAt: new Date() } }
+        );
+      })().catch(async (err) => {
+        console.error("csv job failed:", err);
+        try {
+          await database.collection("bulk_jobs").updateOne(
+            { jobId }, { $set: { status: "error", error: err.message } }
+          );
+        } catch {}
       });
 
-      return json({ enriched, count: enriched.length });
+      return json({ jobId, total: rows.length });
     }
 
     // POST /api/saved { leadId }
