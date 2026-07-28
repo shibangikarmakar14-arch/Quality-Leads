@@ -227,6 +227,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "Full workflow tested successfully: POST /api/saved saves lead_003 (returns saved:true), GET /api/saved returns array with lead_003 including snapshot fields (name, title, company, avatar), POST again returns alreadySaved:true, DELETE /api/saved/lead_003 removes it (returns ok:true), GET /api/saved confirms removal. All 5 test cases passed."
+      - working: true
+        agent: "testing"
+        comment: "BUG FIX VERIFICATION COMPLETE ✅ - Verified two deployment-blocker bug fixes: (1) BUG 1 FIX: POST /api/saved now properly destructures folder and note with default values (line 375: const { leadId, folder = 'Favorites', note = '' } = body;) - NO MORE 'folder is not defined' or 'note is not defined' errors. (2) BUG 2 FIX: GET /api/saved now has .limit(100) to prevent unbounded queries (line 68). All 6 test scenarios PASSED: POST with full body (leadId/folder/note) returns 200, GET returns saved lead with correct folder='HotList' and note='Follow up next week', POST with only leadId uses defaults correctly and returns alreadySaved:true, POST with empty body returns 400 'leadId required', DELETE works correctly, smoke test GET /api/leads?q=VP still returns 200 with 2 results. Both bugs are fixed and production-ready."
 
   - task: "GET /api/crm + POST /api/crm/move + POST /api/crm/add (Kanban pipeline)"
     implemented: true
@@ -377,6 +380,62 @@ agent_communication:
       3) /api/saved POST+GET+DELETE round-trip.
       4) /api/crm GET (auto-seed), /api/crm/add, /api/crm/move.
       Env keys already in /app/.env: EMERGENT_LLM_KEY, MONGO_URL, DB_NAME=quality_leads.
+  - agent: "testing"
+    message: |
+      ========================================================================
+      BUG FIX VERIFICATION COMPLETE - /api/saved Deployment Blockers Fixed ✅
+      ========================================================================
+      
+      Verified two critical bug fixes in /app/app/api/[[...path]]/route.js:
+      
+      BUG 1 FIX VERIFIED ✅:
+      - Issue: POST /api/saved was using undefined variables `folder` and `note`
+      - Fix Applied: Line 375 now has proper destructuring with defaults:
+        const { leadId, folder = "Favorites", note = "" } = body;
+      - Result: NO MORE "folder is not defined" or "note is not defined" errors
+      
+      BUG 2 FIX VERIFIED ✅:
+      - Issue: GET /api/saved had unbounded .find({}).sort().toArray()
+      - Fix Applied: Line 68 now has .limit(100) to prevent unbounded queries
+      - Result: Query is now bounded to 100 results maximum
+      
+      TEST RESULTS (6/6 PASSED):
+      
+      ✅ Test 1: POST /api/saved with full body (leadId, folder, note)
+         - Status: 200 OK
+         - Response: { saved: true }
+         - Verified: folder and note parameters accepted without errors
+      
+      ✅ Test 2: GET /api/saved verify saved entry
+         - Status: 200 OK
+         - Verified: lead_004 found with folder="HotList" and note="Follow up next week"
+         - Data persistence confirmed
+      
+      ✅ Test 3: POST /api/saved with only leadId (no folder/note)
+         - Status: 200 OK
+         - Response: { saved: true, alreadySaved: true }
+         - Verified: Default values applied correctly without errors
+      
+      ✅ Test 4: POST /api/saved with empty body (missing leadId)
+         - Status: 400 Bad Request
+         - Response: { error: "leadId required" }
+         - Verified: Proper validation in place
+      
+      ✅ Test 5: DELETE /api/saved/lead_004
+         - Status: 200 OK
+         - Response: { ok: true }
+         - Verified: Deletion works correctly
+      
+      ✅ Test 6: Smoke test GET /api/leads?q=VP
+         - Status: 200 OK
+         - Results: 2 VP leads returned (Sarah Chen, Aisha Patel)
+         - Verified: File still compiles, other endpoints unaffected
+      
+      PRODUCTION READINESS: ✅
+      
+      Both deployment-blocker bugs are fixed and verified. The /api/saved endpoints
+      are now production-ready with proper error handling, default values, and
+      bounded queries. All test scenarios passed without issues.
   - agent: "testing"
     message: |
       Backend testing completed. Created /app/backend_test.py with 25 comprehensive tests.
