@@ -191,29 +191,35 @@ ${buildLeadContext(lead)}`;
       const runOne = async (leadId) => {
         const lead = getLead(leadId);
         if (!lead) return { leadId, error: "Not found" };
-        try {
-          const system = `You are an elite outbound copywriter. Tone: ${tone}. Write ${objective}.\n${pitchLine}\nUse specifics from the lead. No preamble. Plain text ready to paste.\n\n${buildLeadContext(lead)}`;
-          const content = await chatCompletion({
-            system,
-            messages: [{ role: "user", content: `Write the ${type.replace(/_/g, " ")} now.` }],
-            maxTokens: 500,
-            temperature: 0.75
-          });
-          return {
-            leadId, name: lead.name, title: lead.title, company: lead.company, avatar: lead.avatar,
-            content
-          };
-        } catch (err) {
-          return { leadId, name: lead.name, company: lead.company, avatar: lead.avatar, error: err.message };
+        const system = `You are an elite outbound copywriter. Tone: ${tone}. Write ${objective}.\n${pitchLine}\nUse specifics from the lead. No preamble. Plain text ready to paste.\n\n${buildLeadContext(lead)}`;
+        // Retry up to 2 times on transient LLM errors
+        let lastErr;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const content = await chatCompletion({
+              system,
+              messages: [{ role: "user", content: `Write the ${type.replace(/_/g, " ")} now.` }],
+              maxTokens: 500,
+              temperature: 0.75
+            });
+            return {
+              leadId, name: lead.name, title: lead.title, company: lead.company, avatar: lead.avatar,
+              content
+            };
+          } catch (err) {
+            lastErr = err;
+            // Wait before retry (exponential-ish)
+            await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+          }
         }
+        return { leadId, name: lead.name, company: lead.company, avatar: lead.avatar, error: lastErr?.message || "LLM error" };
       };
 
-      // Parallel with limited concurrency (batches of 5)
+      // Sequential processing to avoid burst rate limits from LLM proxy
       const results = [];
-      for (let i = 0; i < leadIds.length; i += 5) {
-        const batch = leadIds.slice(i, i + 5);
-        const batchResults = await Promise.all(batch.map(runOne));
-        results.push(...batchResults);
+      for (const leadId of leadIds) {
+        const r = await runOne(leadId);
+        results.push(r);
       }
 
       const database = await db();
@@ -286,32 +292,37 @@ Return ONLY valid JSON, no markdown, no code fences. Schema:
   "coldEmail": "personalized cold email text starting with Subject:"
 }`;
 
-        try {
-          const raw = await chatCompletion({
-            system,
-            messages: [{ role: "user", content: rowText }],
-            maxTokens: 600,
-            temperature: 0.7
-          });
-          const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
-          let parsed;
-          try { parsed = JSON.parse(cleaned); }
-          catch {
-            const match = cleaned.match(/\{[\s\S]*\}/);
-            if (match) parsed = JSON.parse(match[0]);
-            else throw new Error("Invalid JSON from LLM");
+        let lastErr;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const raw = await chatCompletion({
+              system,
+              messages: [{ role: "user", content: rowText }],
+              maxTokens: 600,
+              temperature: 0.7
+            });
+            const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+            let parsed;
+            try { parsed = JSON.parse(cleaned); }
+            catch {
+              const match = cleaned.match(/\{[\s\S]*\}/);
+              if (match) parsed = JSON.parse(match[0]);
+              else throw new Error("Invalid JSON from LLM");
+            }
+            return { ...row, buyingSignals: parsed.buyingSignals || [], coldEmail: parsed.coldEmail || "" };
+          } catch (err) {
+            lastErr = err;
+            await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
           }
-          return { ...row, buyingSignals: parsed.buyingSignals || [], coldEmail: parsed.coldEmail || "" };
-        } catch (err) {
-          return { ...row, error: err.message };
         }
+        return { ...row, error: lastErr?.message || "LLM error" };
       };
 
+      // Sequential processing to avoid burst rate limits
       const enriched = [];
-      for (let i = 0; i < rows.length; i += 5) {
-        const batch = rows.slice(i, i + 5);
-        const batchResults = await Promise.all(batch.map(runOne));
-        enriched.push(...batchResults);
+      for (const row of rows) {
+        const r = await runOne(row);
+        enriched.push(r);
       }
 
       const database = await db();

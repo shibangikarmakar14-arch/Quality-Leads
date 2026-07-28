@@ -181,13 +181,19 @@ backend:
     implemented: true
     working: false
     file: "app/api/[[...path]]/route.js"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
     needs_retesting: false
     status_history:
       - working: false
         agent: "testing"
         comment: "Backend endpoint returns 502 due to LLM budget exceeded. Frontend UI testing confirms - bulk generation for 8 leads fails with 502 error. Console log: 'Failed to load resource: the server responded with a status of 502 () at /api/outreach/bulk'. Individual outreach generation works, but bulk operations exceed budget. Code is correct, issue is external LLM service budget limit for parallel requests."
+      - working: false
+        agent: "main"
+        comment: "Applied fix: switched from parallel to sequential processing with retry-on-failure (up to 3 attempts with exponential backoff 800ms * attempt). This should prevent LLM burst rate limit errors."
+      - working: false
+        agent: "testing"
+        comment: "Bug fix verification completed. GOOD NEWS: Sequential processing with retry logic IS working - no more LLM burst rate limit errors. Backend successfully returns 200 OK. BAD NEWS: New issue discovered - 60-second gateway timeout. Test results: (1) 3 leads: ✅ 200 OK in 22.9s, all 3 with content. (2) 5 leads: ✅ 200 OK in 38.4s, all 5 with content. (3) 8 leads: ❌ 502 in 60.1s - backend returns 200 in 59.8s (confirmed in logs) but gateway times out before response reaches client. ROOT CAUSE: Sequential processing takes ~7.5s per lead. 8 leads = ~60s, which hits infrastructure gateway timeout. This is NOT a code bug - the endpoint works correctly for batches under 60s. SOLUTIONS: (a) Increase gateway timeout to 120s+, (b) Limit batch size to 5-6 leads, (c) Implement async processing with background jobs, or (d) Optimize LLM calls to be faster."
 
   - task: "POST /api/import/csv AI-enriched CSV import"
     implemented: true
@@ -200,6 +206,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "CSV import with AI enrichment WORKS! Frontend testing shows successful enrichment of 4 sample prospects (Jane Doe, John Smith, Lisa Wang, Carlos Martinez). Each enriched result contains buying signals (multiple tags) and personalized cold email (>100 chars). Completed in ~60s. LLM integration functional for this endpoint."
+      - working: true
+        agent: "testing"
+        comment: "Re-verified after sequential processing fix. ✅ PASSED: POST /api/import/csv with 3 rows (Alice/CRO, Bob/CTO, Cara/VP Sales) returned 200 OK in 44.8s. All 3 rows successfully enriched with buyingSignals (5 signals each) and coldEmail (934-1069 chars each). Sequential processing with retry logic working perfectly for CSV import."
 
   - task: "POST /api/saved and GET /api/saved (bookmarks)"
     implemented: true
@@ -342,15 +351,15 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 1
-  run_ui: true
+  version: "1.2"
+  test_sequence: 2
+  run_ui: false
 
 test_plan:
   current_focus:
-    - "POST /api/outreach/bulk - LLM budget issue for bulk operations"
+    - "POST /api/outreach/bulk - Gateway timeout issue for 8 leads"
   stuck_tasks:
-    - "POST /api/outreach/bulk - needs LLM budget increase for parallel requests"
+    - "POST /api/outreach/bulk - 60s gateway timeout prevents 8-lead batches from completing"
   test_all: false
   test_priority: "high_first"
 
@@ -483,3 +492,74 @@ agent_communication:
       
       All other features are production-ready. The UI is polished, responsive,
       and all core workflows function correctly.
+
+
+  - agent: "testing"
+    message: |
+      ========================================================================
+      BUG FIX VERIFICATION COMPLETED - Sequential Processing with Retry Logic
+      ========================================================================
+      
+      Tested the fix for POST /api/outreach/bulk (switched from parallel to 
+      sequential processing with 3-attempt retry + exponential backoff).
+      
+      TEST RESULTS:
+      
+      ✅ POST /api/import/csv (3 rows):
+         - Status: 200 OK in 44.8 seconds
+         - All 3 rows enriched successfully
+         - buyingSignals: 5 signals each
+         - coldEmail: 934-1069 chars each
+         - Sequential processing working perfectly
+      
+      ⚠️ POST /api/outreach/bulk (8 leads):
+         - Status: 502 (Gateway Timeout)
+         - Backend returns: 200 OK in 59.8s (confirmed in logs)
+         - Client receives: 502 from gateway after 60.1s
+         - ROOT CAUSE: 60-second infrastructure gateway timeout
+      
+      DETAILED ANALYSIS:
+      
+      Tested with varying batch sizes to identify threshold:
+      • 3 leads: ✅ 200 OK in 22.9s - All 3 with content (758, 707, 630 chars)
+      • 5 leads: ✅ 200 OK in 38.4s - All 5 with content (730, 786, 654, 692, 681 chars)
+      • 8 leads: ❌ 502 in 60.1s - Backend succeeds but gateway times out
+      
+      CONCLUSION:
+      
+      ✅ The bug fix IS WORKING:
+         - Sequential processing prevents LLM burst rate limit errors
+         - Retry logic (3 attempts with backoff) handles transient failures
+         - No more LLM proxy 502 errors
+         - Code is functioning correctly
+      
+      ❌ NEW ISSUE DISCOVERED:
+         - Infrastructure has 60-second gateway timeout
+         - Sequential processing takes ~7.5s per lead
+         - 8 leads = ~60s, which hits the timeout
+         - This is NOT a code bug - it's an infrastructure limitation
+      
+      RECOMMENDATIONS FOR MAIN AGENT:
+      
+      1. IMMEDIATE FIX OPTIONS:
+         a) Increase gateway timeout to 120+ seconds (infrastructure change)
+         b) Limit batch size to 5-6 leads max (product constraint)
+         c) Implement async processing:
+            - Return 202 Accepted immediately
+            - Process in background job
+            - Provide status endpoint to check progress
+            - Notify via webhook/polling when complete
+         d) Optimize LLM calls to be faster (reduce tokens, simpler prompts)
+      
+      2. CURRENT STATE:
+         - Endpoint works correctly for batches under 60 seconds
+         - 3-5 leads work perfectly
+         - 8+ leads hit gateway timeout
+      
+      3. PRIORITY:
+         - This is a HIGH priority issue if 8-lead batches are required
+         - If 5-lead batches are acceptable, this is LOW priority
+         - Async processing is the most scalable long-term solution
+      
+      The sequential processing fix successfully resolved the LLM burst rate
+      limit issue, but introduced a new constraint due to infrastructure timeout.
