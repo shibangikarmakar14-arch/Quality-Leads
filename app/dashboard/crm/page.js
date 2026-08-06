@@ -52,11 +52,11 @@ export default function CRMPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Pipeline</h1>
-          <p className="text-white/50 mt-1">Drag deals across stages to update your CRM.</p>
+          <p className="text-slate-500 mt-1">Drag deals across stages to update your CRM.</p>
         </div>
         <div className="text-right">
           <div className="text-2xl font-semibold">${(total / 1000).toFixed(0)}K</div>
-          <div className="text-xs text-white/50">Total pipeline value</div>
+          <div className="text-xs text-slate-500">Total pipeline value</div>
         </div>
       </div>
 
@@ -68,12 +68,12 @@ export default function CRMPage() {
             <div key={stage.key}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => { if (dragged) { move(dragged.from, stage.key, dragged.deal); setDragged(null); } }}
-              className={`rounded-xl bg-gradient-to-b ${stage.color} border border-white/10 p-3 flex flex-col`}>
+              className={`rounded-xl bg-gradient-to-b ${stage.color} border border-slate-200 p-3 flex flex-col`}>
               <div className="flex items-center justify-between mb-3 px-1">
                 <div className="font-medium text-sm">{stage.label}</div>
-                <Badge className="bg-white/5 border border-white/10 text-white/70 text-[10px]">{deals.length}</Badge>
+                <Badge className="bg-white/5 border border-slate-200 text-slate-700 text-[10px]">{deals.length}</Badge>
               </div>
-              <div className="text-[11px] text-white/50 px-1 mb-3">${(stageValue / 1000).toFixed(0)}K</div>
+              <div className="text-[11px] text-slate-500 px-1 mb-3">${(stageValue / 1000).toFixed(0)}K</div>
               <div className="space-y-2 flex-1">
                 {deals.map(d => {
                   const lead = leadMap[d.leadId];
@@ -83,19 +83,19 @@ export default function CRMPage() {
                       draggable
                       onDragStart={() => setDragged({ from: stage.key, deal: d })}
                       className="cursor-grab active:cursor-grabbing">
-                      <Card className="bg-white/[0.04] border-white/10 rounded-lg hover:bg-white/[0.06] transition">
+                      <Card className="bg-slate-100 border-slate-200 rounded-lg hover:bg-slate-100 transition">
                         <CardContent className="p-3">
                           <div className="flex items-center gap-2">
-                            <img src={lead.avatar} alt={lead.name} className="h-7 w-7 rounded-full object-cover ring-1 ring-white/10" />
+                            <img src={lead.avatar} alt={lead.name} className="h-7 w-7 rounded-full object-cover ring-1 ring-slate-200" />
                             <div className="min-w-0 flex-1">
                               <div className="text-xs font-medium truncate">{lead.name}</div>
-                              <div className="text-[10px] text-white/50 truncate">{lead.company}</div>
+                              <div className="text-[10px] text-slate-500 truncate">{lead.company}</div>
                             </div>
                           </div>
-                          {d.note && <div className="text-[11px] text-white/60 mt-2 line-clamp-2">{d.note}</div>}
+                          {d.note && <div className="text-[11px] text-slate-600 mt-2 line-clamp-2">{d.note}</div>}
                           <div className="flex items-center justify-between mt-2">
-                            <span className="text-[10px] text-emerald-400">${(d.value / 1000).toFixed(0)}K</span>
-                            <Link href={`/dashboard/lead/${d.leadId}`} className="text-[10px] text-indigo-300 hover:underline">Open</Link>
+                            <span className="text-[10px] text-teal-600">${(d.value / 1000).toFixed(0)}K</span>
+                            <Link href={`/dashboard/lead/${d.leadId}`} className="text-[10px] text-teal-600 hover:underline">Open</Link>
                           </div>
                         </CardContent>
                       </Card>

@@ -34,50 +34,56 @@ async function fetchLead(id) {
 
 // Generate a batch of realistic leads matching a search query via Claude.
 async function generateLeadsForQuery(query) {
-  const system = `You are a B2B sales data generator. Given a sales search query, produce 6 realistic-sounding but FICTIONAL prospect profiles that match the query. Fictional but plausible names, companies, titles, and details.
+  const system = `You are a B2B sales data generator specializing in the P&C insurance and staffing industries. Given a sales search query, produce 6 realistic-sounding FICTIONAL prospect profiles that match the query. Fictional but plausible names, companies, titles, and details.
+
+If the query mentions a real major carrier (Chubb, Travelers, Liberty Mutual, Progressive, Nationwide, AIG, Allstate, State Farm, The Hartford, Zurich) or a real staffing firm (Aerotek, TEKsystems, Robert Half, Kforce, Insight Global, Allegis, Randstad, ManpowerGroup, Kelly Services, Adecco), use that real company name literally.
+
+For insurance prospects, intent triggers should reflect: license renewals, claims-tech RFPs, state expansion filings, insurtech funding/partnerships, actuarial or underwriter hiring surges, vendor consolidation initiatives, Guidewire/Duck Creek migrations, reinsurance treaty renewals, regulatory changes.
+
+For staffing prospects, intent triggers should reflect: job posting volume spikes (e.g. "+40% MoM"), new office openings, healthcare/IT/finance vertical pushes, major MSA renewals, recruiter hiring surges, ATS platform migrations (Bullhorn, Salesforce), federal contract wins.
 
 Return ONLY a valid JSON ARRAY of 6 objects, no markdown, no code fences, no preamble. Keep values concise. Each object must exactly match this schema:
 {
   "name": "First Last",
-  "title": "Full job title",
+  "title": "Full job title (e.g. VP Procurement, Head of Recruiting, Chief Underwriting Officer)",
   "company": "Company Name",
-  "location": "City, Country",
-  "industry": "Industry name",
-  "seniority": "C-Level" | "VP" | "Director" | "Head" | "Manager" | "Senior" | "Individual Contributor" | "Founder",
-  "department": "Engineering|Sales|Marketing|Operations|Finance|Procurement|People|Product|BizDev|Executive",
+  "location": "City, State/Country",
+  "industry": "P&C Insurance | Staffing / Recruiting | IT Staffing | Healthcare Staffing | Professional Staffing | etc",
+  "seniority": "C-Level | VP | Director | Head | Manager | Senior | Individual Contributor | Founder",
+  "department": "Procurement | Underwriting | Claims | Technology | Talent Acquisition | Recruiting | Sales | Operations | Executive",
   "linkedin": "linkedin.com/in/firstname-lastname",
   "email": "first.last@companydomain.com",
   "experience": [
-    { "role": "prior role", "company": "prior company", "years": "2020 - 2024" },
+    { "role": "prior role", "company": "prior insurance/staffing company", "years": "2020 - 2024" },
     { "role": "earlier role", "company": "earlier company", "years": "2015 - 2020" }
   ],
-  "education": ["Degree, University"],
-  "skills": ["skill1","skill2","skill3","skill4","skill5"],
+  "education": ["Degree, University", "Industry cert if relevant (CPCU, ARM, SPHR)"],
+  "skills": ["4-5 industry-specific skills"],
   "recentPosts": [
     "One short realistic LinkedIn-style post (max 20 words)",
     "Another realistic short post (max 20 words)"
   ],
   "buyingSignals": [
-    "3-4 short specific signals (max 8 words each)"
+    "3-4 short industry-specific intent triggers (max 10 words each)"
   ],
   "companyDetails": {
     "name": "Company Name",
     "logo": "single uppercase letter",
     "industry": "Industry",
     "employees": "e.g. 5000",
-    "revenue": "e.g. $2B",
+    "revenue": "e.g. $2B or $50B GWP",
     "founded": 2010,
-    "hq": "City, Country",
-    "funding": "short e.g. Public / Series D $200M",
-    "growth": "e.g. +45% YoY",
-    "techStack": ["tech1","tech2","tech3","tech4","tech5"],
-    "news": ["3 short news items"],
-    "competitors": ["competitor1","competitor2","competitor3"],
-    "painPoints": ["short pain1","short pain2","short pain3"]
+    "hq": "City, State",
+    "funding": "e.g. Public NYSE:XYZ / Mutual / Private",
+    "growth": "e.g. +9% YoY",
+    "techStack": ["Guidewire","Bullhorn","Salesforce","AWS","Snowflake" or similar industry tools"],
+    "news": ["3 short industry-relevant news items"],
+    "competitors": ["3 real competitors"],
+    "painPoints": ["3 short industry-specific pain points"]
   }
 }
 
-If the query mentions a real large company (e.g., Google, Microsoft, Amazon), use that company name literally with plausible employees/revenue for it. Otherwise invent believable companies. Do NOT include any "id" field. Keep the entire JSON compact.`;
+Do NOT include any "id" field. Keep the entire JSON compact.`;
 
   const raw = await chatCompletion({
     system,

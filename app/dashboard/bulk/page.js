@@ -101,36 +101,36 @@ export default function BulkOutreachPage() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white mb-4">
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 mb-4">
         <ArrowLeft className="w-4 h-4" /> Back
       </Link>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Bulk Outreach</h1>
-          <p className="text-white/50 mt-1">Select leads, pick a format, and let Claude write all of them in one click.</p>
+          <p className="text-slate-500 mt-1">Select leads, pick a format, and let Claude write all of them in one click.</p>
         </div>
-        <Badge className="bg-indigo-500/15 text-indigo-300 border-indigo-500/20">
+        <Badge className="bg-teal-50 text-teal-600 border-teal-200">
           <Users className="w-3 h-3 mr-1" /> {selected.size} selected
         </Badge>
       </div>
 
       {/* Config */}
-      <Card className="bg-white/[0.02] border-white/10 rounded-xl mb-5">
+      <Card className="bg-white border-slate-200 rounded-xl mb-5">
         <CardContent className="p-5 grid md:grid-cols-4 gap-3 items-end">
           <div>
-            <div className="text-xs text-white/50 mb-1.5">Format</div>
+            <div className="text-xs text-slate-500 mb-1.5">Format</div>
             <Select value={type} onValueChange={setType}>
-              <SelectTrigger className="bg-white/[0.03] border-white/10"><SelectValue /></SelectTrigger>
-              <SelectContent className="bg-[#0c0c11] border-white/10 text-white">
+              <SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-white border-slate-200 text-white">
                 {OUTREACH_TYPES.map(t => <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <div className="text-xs text-white/50 mb-1.5">Tone</div>
+            <div className="text-xs text-slate-500 mb-1.5">Tone</div>
             <Select value={tone} onValueChange={setTone}>
-              <SelectTrigger className="bg-white/[0.03] border-white/10"><SelectValue /></SelectTrigger>
-              <SelectContent className="bg-[#0c0c11] border-white/10 text-white">
+              <SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-white border-slate-200 text-white">
                 {["consultative","professional","friendly","executive","direct","casual"].map(x =>
                   <SelectItem key={x} value={x}>{x[0].toUpperCase()+x.slice(1)}</SelectItem>
                 )}
@@ -138,23 +138,23 @@ export default function BulkOutreachPage() {
             </Select>
           </div>
           <div className="md:col-span-2">
-            <div className="text-xs text-white/50 mb-1.5">Your pitch (optional)</div>
+            <div className="text-xs text-slate-500 mb-1.5">Your pitch (optional)</div>
             <Textarea value={pitch} onChange={e => setPitch(e.target.value)}
               placeholder="e.g., We help RevOps teams cut manual research 5x with an AI copilot..."
-              className="bg-white/[0.03] border-white/10 h-10 min-h-[40px]" />
+              className="bg-slate-50 border-slate-200 h-10 min-h-[40px]" />
           </div>
         </CardContent>
       </Card>
 
       {/* Lead list with checkboxes */}
-      <Card className="bg-white/[0.02] border-white/10 rounded-xl mb-5">
+      <Card className="bg-white border-slate-200 rounded-xl mb-5">
         <CardContent className="p-5">
           <div className="flex items-center justify-between mb-3">
-            <button onClick={selectAll} className="text-xs text-indigo-300 hover:underline">
+            <button onClick={selectAll} className="text-xs text-teal-600 hover:underline">
               {selected.size === leads.length ? "Deselect all" : `Select all (${leads.length})`}
             </button>
             <Button onClick={generate} disabled={running || selected.size === 0}
-              className="bg-gradient-to-br from-indigo-500 to-purple-600 hover:opacity-90 text-white">
+              className="bg-gradient-to-br from-teal-500 to-cyan-500 hover:opacity-90 text-white">
               <Sparkles className="w-4 h-4 mr-2" />
               {running ? `Generating ${progress.done}/${progress.total}...` : `Generate for ${selected.size} lead${selected.size!==1?"s":""}`}
             </Button>
@@ -164,16 +164,16 @@ export default function BulkOutreachPage() {
             {leads.map(l => (
               <label key={l.id}
                 className={`flex items-center gap-3 p-2.5 rounded-lg border transition cursor-pointer ${
-                  selected.has(l.id) ? "bg-indigo-500/10 border-indigo-500/30" : "bg-white/[0.02] border-white/5 hover:bg-white/[0.04]"
+                  selected.has(l.id) ? "bg-teal-50 border-teal-300" : "bg-white border-slate-200 hover:bg-slate-100"
                 }`}>
                 <Checkbox checked={selected.has(l.id)} onCheckedChange={() => toggle(l.id)}
-                  className="border-white/20 data-[state=checked]:bg-indigo-500 data-[state=checked]:border-indigo-500" />
-                <img src={l.avatar} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-white/10" />
+                  className="border-slate-300 data-[state=checked]:bg-teal-500 data-[state=checked]:border-indigo-500" />
+                <img src={l.avatar} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">{l.name}</div>
-                  <div className="text-xs text-white/50">{l.title} • {l.company}</div>
+                  <div className="text-xs text-slate-500">{l.title} • {l.company}</div>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/60">{l.seniority}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-slate-200 text-slate-600">{l.seniority}</span>
               </label>
             ))}
           </div>
@@ -185,10 +185,10 @@ export default function BulkOutreachPage() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <CheckCircle2 className="w-5 h-5 text-teal-600" />
               <span className="font-medium">{results.length} personalized messages ready</span>
             </div>
-            <Button size="sm" onClick={copyAll} className="bg-white text-black hover:bg-white/90">
+            <Button size="sm" onClick={copyAll} className="bg-teal-500 text-slate-900 hover:bg-teal-600 shadow-sm">
               <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy all
             </Button>
           </div>
@@ -196,23 +196,23 @@ export default function BulkOutreachPage() {
           <div className="space-y-3">
             {results.map((r, i) => (
               <motion.div key={r.leadId} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-                <Card className="bg-white/[0.02] border-white/10 rounded-xl">
+                <Card className="bg-white border-slate-200 rounded-xl">
                   <CardContent className="p-5">
                     <div className="flex items-center gap-3 mb-3">
-                      <img src={r.avatar} alt="" className="h-9 w-9 rounded-full object-cover ring-1 ring-white/10" />
+                      <img src={r.avatar} alt="" className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200" />
                       <div className="flex-1">
                         <div className="font-medium text-sm">{r.name}</div>
-                        <div className="text-xs text-white/50">{r.title} • {r.company}</div>
+                        <div className="text-xs text-slate-500">{r.title} • {r.company}</div>
                       </div>
                       <Button size="sm" variant="outline" onClick={() => copyOne(r.content)}
-                        className="border-white/10 bg-white/[0.02] text-white hover:bg-white/10">
+                        className="border-slate-200 bg-white text-slate-900 hover:bg-white/10">
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                     {r.error ? (
-                      <div className="text-sm text-rose-400">Error: {r.error}</div>
+                      <div className="text-sm text-rose-600">Error: {r.error}</div>
                     ) : (
-                      <div className="whitespace-pre-wrap text-sm text-white/85 rounded-lg bg-black/40 border border-white/10 p-4">{r.content}</div>
+                      <div className="whitespace-pre-wrap text-sm text-slate-800 rounded-lg bg-slate-50 border border-slate-200 p-4">{r.content}</div>
                     )}
                   </CardContent>
                 </Card>
