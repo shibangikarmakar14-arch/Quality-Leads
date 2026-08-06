@@ -3,6 +3,7 @@ import { MongoClient } from "mongodb";
 import { v4 as uuidv4 } from "uuid";
 import { LEADS, COMPANIES, searchLeads, getLead } from "@/lib/leads-data";
 import { chatCompletion, buildLeadContext } from "@/lib/llm";
+import { searchProspects, getQuotaSnapshot } from "@/lib/providers/search";
 
 const MONGO_URL = process.env.MONGO_URL;
 const DB_NAME = process.env.DB_NAME || "quality_leads";
@@ -16,13 +17,21 @@ async function db() {
   return _client.db(DB_NAME);
 }
 
-// Lookup a lead by id. Checks seeded data first, then generated_leads in Mongo.
+// Lookup a lead by id. Checks seeded data first, then pdl_leads (verified), then generated_leads in Mongo.
 async function fetchLead(id) {
   if (!id) return null;
   const seeded = getLead(id);
   if (seeded) return seeded;
   try {
     const database = await db();
+    // Prefer verified PDL results
+    if (id.startsWith("pdl_")) {
+      const doc = await database.collection("pdl_leads").findOne({ id });
+      if (doc) {
+        const { _id, _query, cachedAt, ...rest } = doc;
+        return rest;
+      }
+    }
     const doc = await database.collection("generated_leads").findOne({ id });
     if (doc) {
       const { _id, ...rest } = doc;
@@ -144,7 +153,7 @@ export async function GET(req) {
     // GET /api
     if (parts.length === 0) return json({ ok: true, service: "Quality Leads API" });
 
-    // GET /api/leads?q=...
+    // GET /api/leads?q=...   \u2014 REAL provider (PDL) with local fallback
     if (parts[0] === "leads" && parts.length === 1) {
       const q = (searchParams.get("q") || "").trim();
       const seniority = searchParams.get("seniority") || "";
@@ -153,33 +162,70 @@ export async function GET(req) {
       if (seniority) filters.seniority = seniority;
       if (department) filters.department = department;
 
-      // 1) Local seeded search first
-      const local = searchLeads(q, filters);
-      if (local.length > 0 || !q) {
-        return json({ results: local, count: local.length, source: "seeded" });
+      // No query \u2192 return seeded (demo) prospects so dashboard isn't empty
+      if (!q) {
+        const local = searchLeads(q, filters);
+        return json({ results: local, count: local.length, source: "seeded", quota: getQuotaSnapshot() });
       }
 
-      // 2) Check cache in Mongo for this query
+      // 1) Cache in Mongo
       const database = await db();
       const qKey = q.toLowerCase();
-      const cached = await database.collection("generated_leads")
-        .find({ _query: qKey }).limit(20).toArray();
-      if (cached.length > 0) {
-        const items = cached.map(({ _id, ...rest }) => rest);
-        return json({ results: items, count: items.length, source: "cached" });
+      const cached = await database.collection("pdl_search_cache")
+        .findOne({ _query: qKey });
+      if (cached && cached.results && Date.now() - new Date(cached.cachedAt).getTime() < 24 * 60 * 60 * 1000) {
+        return json({
+          results: cached.results,
+          count: cached.results.length,
+          source: "cached",
+          parsedFilters: cached.parsedFilters,
+          quota: getQuotaSnapshot()
+        });
       }
 
-      // 3) Generate fresh via Claude
-      try {
-        const generated = await generateLeadsForQuery(q);
-        // Store in Mongo with _query tag
-        const withTag = generated.map(g => ({ ...g, _query: qKey, generatedAt: new Date() }));
-        if (withTag.length) await database.collection("generated_leads").insertMany(withTag);
-        return json({ results: generated, count: generated.length, source: "generated" });
-      } catch (e) {
-        console.error("lead generation failed:", e);
-        return json({ results: [], count: 0, source: "empty", error: e.message });
+      // 2) Live PDL search
+      const pdlRes = await searchProspects({ query: q, size: 10 });
+
+      if (pdlRes.error) {
+        return json({
+          results: [], count: 0, source: "error",
+          error: pdlRes.error,
+          quota: pdlRes.quota
+        });
       }
+
+      // Cache the results (even empty) to avoid re-spending credits
+      if (pdlRes.results.length > 0) {
+        // also store individual leads in a lookup collection so /api/leads/:id works
+        const bulkOps = pdlRes.results.map(lead => ({
+          updateOne: {
+            filter: { id: lead.id },
+            update: { $set: { ...lead, _query: qKey, cachedAt: new Date() } },
+            upsert: true
+          }
+        }));
+        if (bulkOps.length) await database.collection("pdl_leads").bulkWrite(bulkOps);
+      }
+      await database.collection("pdl_search_cache").updateOne(
+        { _query: qKey },
+        { $set: { _query: qKey, results: pdlRes.results, parsedFilters: pdlRes.parsedFilters, cachedAt: new Date() } },
+        { upsert: true }
+      );
+
+      return json({
+        results: pdlRes.results,
+        count: pdlRes.results.length,
+        source: "pdl",
+        totalMatches: pdlRes.totalMatches || 0,
+        parsedFilters: pdlRes.parsedFilters,
+        quota: pdlRes.quota,
+        noMatch: pdlRes.noMatch || false
+      });
+    }
+
+    // GET /api/quota  \u2014  latest PDL quota snapshot for the sidebar/indicator
+    if (parts[0] === "quota" && parts.length === 1) {
+      return json({ quota: getQuotaSnapshot() });
     }
 
     // GET /api/leads/:id
