@@ -6,11 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Accordion, AccordionItem, AccordionTrigger, AccordionContent
-} from "@/components/ui/accordion";
-import {
   Search, Building2, Sparkles, LayoutGrid, Bot, TrendingUp,
-  Mail, Linkedin, FileText, ArrowRight, Zap, Check, ChevronRight,
+  Mail, Linkedin, FileText, ArrowRight, Zap, Check, ChevronRight, ChevronDown,
   Shield, Users, Target, BadgeCheck
 } from "lucide-react";
 
@@ -303,14 +300,17 @@ export default function LandingPage() {
             <Badge className="bg-slate-100 border border-slate-200 text-slate-600 mb-4 hover:bg-slate-100">FAQ</Badge>
             <h2 className="text-4xl font-semibold tracking-tight">Frequently asked</h2>
           </div>
-          <Accordion type="single" collapsible className="space-y-2">
+          <div className="space-y-2">
             {faqs.map((f, i) => (
-              <AccordionItem key={i} value={String(i)} className="border border-slate-200 rounded-xl px-4 bg-white">
-                <AccordionTrigger className="text-left hover:no-underline">{f.q}</AccordionTrigger>
-                <AccordionContent className="text-slate-600">{f.a}</AccordionContent>
-              </AccordionItem>
+              <details key={i} className="group border border-slate-200 rounded-xl px-4 bg-white open:shadow-sm">
+                <summary className="flex items-center justify-between py-4 text-sm font-medium cursor-pointer list-none text-slate-900">
+                  <span>{f.q}</span>
+                  <ChevronDown className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="pb-4 pt-0 text-sm text-slate-600 leading-relaxed">{f.a}</div>
+              </details>
             ))}
-          </Accordion>
+          </div>
         </div>
       </section>
 
@@ -335,7 +335,7 @@ export default function LandingPage() {
             <Link href="/terms" className="hover:text-slate-900">Terms</Link>
             <Link href="/privacy" className="hover:text-slate-900">Privacy</Link>
             <Link href="/refund" className="hover:text-slate-900">Refund Policy</Link>
-            <a href="mailto:support@qualityleads.ai" className="hover:text-slate-900">Support</a>
+            <a href="mailto:shibangikarmakar14@gmail.com" className="hover:text-slate-900">Support</a>
           </nav>
         </div>
       </footer>

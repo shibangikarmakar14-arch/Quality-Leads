@@ -273,6 +273,18 @@ backend:
         agent: "main"
         comment: "200 with stats + pipeline chart data."
 
+  - task: "Bug fixes: FAQ answers, support email, PDL error message"
+    implemented: true
+    working: true
+    file: "app/page.js, lib/providers/pdl.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL THREE BUG FIXES VERIFIED (3/3 passed). BUG 1: FAQ answers now render correctly using native HTML <details>/<summary> tags instead of broken shadcn Accordion - all 5 FAQ answer texts present in homepage HTML. BUG 2: Support email updated from support@qualityleads.ai to shibangikarmakar14@gmail.com in footer - correct email present in mailto link, old email completely removed. BUG 3: PDL error handling improved - API now returns actual PDL error message 'You have hit your account maximum for search (all matches used). You still have 18 credits' instead of hardcoded 'Monthly PDL credit limit reached', with real quota.monthlyRemaining:18 showing contradiction is properly explained. All fixes are production-ready."
+
 frontend:
   - task: "Landing page"
     implemented: true
@@ -395,6 +407,84 @@ agent_communication:
       3) /api/saved POST+GET+DELETE round-trip.
       4) /api/crm GET (auto-seed), /api/crm/add, /api/crm/move.
       Env keys already in /app/.env: EMERGENT_LLM_KEY, MONGO_URL, DB_NAME=quality_leads.
+  - agent: "testing"
+    message: |
+      ========================================================================
+      BUG FIX VERIFICATION COMPLETE - THREE DEPLOYMENT BUGS FIXED ✅
+      ========================================================================
+      
+      Verified three specific bug fixes at https://sales-ai-hub-19.preview.emergentagent.com
+      
+      TEST RESULTS: 3/3 BUGS VERIFIED ✅
+      
+      ✅ BUG 1 FIX VERIFIED: FAQ Answers on Homepage
+      -------------------------------------------------
+      ISSUE: FAQ answers were missing from homepage
+      FIX: Replaced broken shadcn Accordion component (which was silently failing 
+      due to unimported ChevronDown icon + animation issues) with native HTML 
+      <details>/<summary> elements. Also removed stale Accordion imports and added 
+      ChevronDown import to /app/app/page.js.
+      
+      VERIFICATION:
+      - GET https://sales-ai-hub-19.preview.emergentagent.com/
+      - Status: 200 OK
+      - All 5 required FAQ answer texts present in HTML:
+        ✅ "No. The free plan gives you 50 prospect searches per month"
+        ✅ "Claude Sonnet 4.5 by Anthropic"
+        ✅ "CSV export is available on all paid plans"
+        ✅ "Company records refresh weekly"
+        ✅ "Prospect data is sourced from PeopleDataLabs"
+        ✅ "no email or phone number at this time"
+      - All answers wrapped in <details> tags (native HTML elements)
+      - Fix is production-ready
+      
+      ✅ BUG 2 FIX VERIFIED: Support Email in Footer
+      -------------------------------------------------
+      ISSUE: Wrong support email in homepage footer
+      FIX: Changed mailto:support@qualityleads.ai to 
+      mailto:shibangikarmakar14@gmail.com in /app/app/page.js footer
+      
+      VERIFICATION:
+      - GET https://sales-ai-hub-19.preview.emergentagent.com/
+      - Status: 200 OK
+      - ✅ Correct email found: "shibangikarmakar14@gmail.com"
+      - ✅ Email is in mailto link
+      - ✅ Old email completely removed: "support@qualityleads.ai" NOT present
+      - Fix is production-ready
+      
+      ✅ BUG 3 FIX VERIFIED: PDL Error Message Handling
+      -------------------------------------------------
+      ISSUE: Search showed contradictory "Monthly PDL credit limit reached" 
+      error message while credits remained available
+      FIX: Improved PDL error handling in /app/lib/providers/pdl.js. On HTTP 402, 
+      now surfaces the ACTUAL PDL error message + shows real remaining credits 
+      instead of hardcoded "monthly limit reached"
+      
+      VERIFICATION:
+      - GET https://sales-ai-hub-19.preview.emergentagent.com/api/leads?q=apple
+      - Status: 200 OK
+      - Response structure correct:
+        ✅ source: "error" (proper error state)
+        ✅ Error message: "PDL rejected the query: You have hit your account 
+           maximum for search (all matches used). You still have 18 credits."
+        ✅ Error includes actual PDL message (not hardcoded text)
+        ✅ Error includes real credits remaining: "18 credits"
+        ✅ Old hardcoded message "Monthly PDL credit limit reached" NOT present
+        ✅ quota.monthlyRemaining: 18 (proving contradiction is properly explained)
+      - Fix is production-ready
+      
+      PRODUCTION READINESS: ✅
+      
+      All three bug fixes are verified and working correctly in production. 
+      No issues found. The fixes properly address the root causes:
+      1. FAQ answers now render with native HTML (no dependency on broken components)
+      2. Support email updated to correct address
+      3. PDL error messages now show actual API errors and real credit counts
+      
+      RECOMMENDATION FOR MAIN AGENT:
+      
+      All bug fixes verified successfully. No further action needed. Ready to 
+      summarize and finish.
   - agent: "testing"
     message: |
       ========================================================================
