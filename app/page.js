@@ -40,7 +40,7 @@ const faqs = [
   { q: "Which AI model powers the Sales Assistant?", a: "Claude Sonnet 4.5 by Anthropic — currently the strongest model for persuasive B2B writing and long-context prospect analysis." },
   { q: "Can I export leads to my CRM?", a: "Yes — CSV export is available on all paid plans today. Native Salesforce and HubSpot sync are on the Team plan roadmap." },
   { q: "How fresh is the account data?", a: "Company records refresh weekly. Intent triggers (RFPs, hiring spikes, funding) refresh daily." },
-  { q: "How is prospect and contact data handled?", a: "Contact records come from licensed B2B data providers and are stored encrypted. You can request deletion of any record at any time — see our Privacy Policy for details." }
+  { q: "How is prospect and contact data handled?", a: "Prospect data is sourced from PeopleDataLabs and currently includes name, title, company, and LinkedIn URL only — no email or phone number at this time. Records are stored encrypted, and you can request deletion of any record at any time by emailing us. See our Privacy Policy for full details." }
 ];
 
 export default function LandingPage() {
